@@ -3,15 +3,15 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import de.sstoehr.harreader.HarReader;
 import de.sstoehr.harreader.HarReaderException;
-import de.sstoehr.harreader.model.Har;
-import de.sstoehr.harreader.model.HarEntry;
-import de.sstoehr.harreader.model.HarHeader;
-import de.sstoehr.harreader.model.HarQueryParam;
+import de.sstoehr.harreader.model.*;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Scanner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Main {
 
@@ -22,17 +22,20 @@ public class Main {
         HarReader harReader = new HarReader();
         Har har = harReader.readFromFile(new File(path)); //jcpenney.com.har
         ArrayList<HarEntry> jsonEntries = new ArrayList<HarEntry>();
+
         for (HarEntry arg : har.getLog().getEntries()) {
             if ((arg.getResponse().getContent().getMimeType().equals("application/json")
-                    || arg.getResponse().getStatus() == 201) && arg
-                    .getRequest().getUrl().contains("jcpenney")) {
+                    || arg.getRequest().getMethod() == HttpMethod.POST
+                    || arg.getResponse().getContent().getMimeType().equals("text/json"))
+                    && arg.getRequest().getUrl().contains("jcpenney")
+                    ||arg.getRequest().getUrl().contains("api.jcpenney")) {
                 jsonEntries.add(arg);
             }
         }
         String directoryPath = path.replaceAll("//", "-").replaceAll("\\.", "");
         boolean isDirectoryCreated = new File(directoryPath).mkdir();
         System.out.println(
-                "Directory " + directoryPath + "was created : " + isDirectoryCreated);
+                "Directory " + directoryPath + " was created : " + isDirectoryCreated);
         if (isDirectoryCreated || new File(directoryPath).exists()) {
             for (HarEntry jsonEntry : jsonEntries) {
                 harEntityToJson(jsonEntry, directoryPath);
@@ -50,9 +53,10 @@ public class Main {
         predicates.addObject().putObject("deepEquals")
                 .put("path", getRelativePath(jsonEntry.getRequest().getUrl()));
         if (jsonEntry.getRequest().getQueryString() != null) {
+            ObjectNode query = predicates.addObject().putObject("deepEquals")
+                    .putObject("query");
             for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
-                predicates.addObject().putObject("deepEquals").putObject("query")
-                        .put(harQueryParam.getName(), harQueryParam.getValue());
+                query.put(harQueryParam.getName(), harQueryParam.getValue());
             }
         }
         if (jsonEntry.getRequest().getBodySize() == 0) {
@@ -90,7 +94,18 @@ public class Main {
     public static void printJsonToFile(String directoryPath,
             HarEntry jsonEntry, ObjectMapper mapper, Object objectNode) throws IOException {
 
-        String jsonPath = directoryPath + "/" + getRelativePath(
+        String folder = "";
+        Pattern pattern = Pattern.compile("https?://([^/]+)");
+        Matcher matcher = pattern.matcher(jsonEntry.getRequest().getUrl());
+        if (matcher.find()){
+            folder = "/" + matcher.group(1);
+            File dir = new File(directoryPath + folder);
+            if (!dir.exists()){
+                dir.mkdir();
+            }
+        }
+
+        String jsonPath = directoryPath + folder + "/" + jsonEntry.getRequest().getMethod() + getRelativePath(
                 jsonEntry.getRequest().getUrl()).replaceAll("/", "_");
         int counter = 1;
         if (new File(jsonPath + ".json").exists()) {
@@ -107,7 +122,7 @@ public class Main {
         fileWriter.close();
     }
 
-    public static String getRelativePath(String absolutePath) {
+    private static String getRelativePath(String absolutePath) {
         StringBuilder stringBuilder = new StringBuilder();
         String[] strings = absolutePath.split("/");
         for (int i = 3; i < strings.length - 1; i++) {
