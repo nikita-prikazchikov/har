@@ -204,13 +204,13 @@ public class Main {
             }
         }
 
-        if (currentScenario != null){
-            ObjectNode headers = predicates.addObject().putObject("equals")
-                    .putObject("headers");
-                headers.put("testScenario", currentScenario.getScenarioName());
-                if(jsonEntry.getRequest().getUrl().contains("/draft-order")){
-                    headers.put("testStep", currentScenario.getStepIdDraftOrder());
-                }
+        if (currentScenario != null) {
+            ArrayNode and = predicates.addObject().putArray("and");
+            and.addObject().putObject("contains").putObject("headers").put("cookie","testScenario=" + currentScenario.getScenarioName());
+
+            if (jsonEntry.getRequest().getUrl().contains("/draft-order")) {
+                and.addObject().putObject("contains").putObject("headers").put("cookie", "testStep="+ currentScenario.getStepIdDraftOrder());
+            }
         }
 
         if (jsonEntry.getRequest().getBodySize() != 0) {
