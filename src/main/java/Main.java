@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -25,6 +26,12 @@ public class Main {
     private static String TEST_REFRESH_TOKEN = "svGUAutomation0001.svJcp.Rt0001";
     private static String TEST_DOMAIN = "services.matrix.dp-dev.jcpcloud2.net";
 
+    //Map of har name to real scenario name
+    private static HashMap<String, BddFileDetails> scenarios = new HashMap<String, BddFileDetails>();
+    private static BddFileDetails currentScenario;
+
+    private static HashMap<String, Integer> orderSteps = new HashMap<String, Integer>();
+
     public static void main(String[] args) throws HarReaderException, IOException {
         String HAR_DIRECTORY = "hars";
 
@@ -34,8 +41,11 @@ public class Main {
         File resultsAll = new File(RESULTS_DIRECTORY_ALL);
         createDirectory(resultsAll);
 
+        prepareOrderSteps();
+        prepareHarDetails();
+
         File harDirectory = new File(HAR_DIRECTORY);
-        if(!harDirectory.exists()){
+        if (!harDirectory.exists()) {
             System.out.println("Har directory is missing: " + HAR_DIRECTORY);
             createDirectory(harDirectory);
             System.out.println("Put your har files into: " + HAR_DIRECTORY);
@@ -43,16 +53,39 @@ public class Main {
         }
 
         File[] files = harDirectory.listFiles();
-        if (files == null){
+        if (files == null) {
             System.out.println("Har files are not found in directory: " + HAR_DIRECTORY);
             return;
         }
-        for (File file:files){
+        for (File file : files) {
             replaces.clear();
             if (file.getPath().endsWith(".har")) {
                 processFile(file);
             }
         }
+    }
+
+    private static void prepareHarDetails() {
+        scenarios.put(
+                "CartandCheckout_Smoke_1_ProdAddToCart_Validate add to bag for sephora product.har",
+                new BddFileDetails(
+                        "CartandCheckout_Smoke_1_ProdAddToCart_Validate add to bag for sephora product.har",
+                        "scenarios.yoda.checkout.yk.yoda_cc_smoke_extended_yk.bdd.CartandCheckout_Smoke_1_ProdAddToCart_Validate add to bag for sephora product",
+                        new String[]{
+                                "Given customer starts JCPenney session",
+                                "When customer searches for '${Products.SEPHORA_ITEM.items1.webId}'",
+                                "And customer selects required product options",
+                                "And customer adds product to bag",
+                                "And customer wants to 'CHECKOUT' from add to bag popup",
+                                "Then customer should see personalized shopping bag",
+                                "And customer closes the current session"},
+                        orderSteps))
+        ;
+    }
+
+    private static void prepareOrderSteps(){
+        orderSteps.put("customer wants to 'CHECKOUT' from add to bag popup", 2);
+        orderSteps.put("customer click on 'apply code' link of '1' available coupon and verifies its functioning", 5);
     }
 
     private static void processFile(File file) throws HarReaderException, IOException {
@@ -61,36 +94,50 @@ public class Main {
             System.out.println("File does not exist: " + file.getPath());
             return;
         }
+        if (scenarios.containsKey(file.getName())){
+            currentScenario = scenarios.get(file.getName());
+            System.out.println("Found scenario details for: " + file.getName());
+        }
+        else{
+            currentScenario = null;
+            System.out.println("Scenario details aren't found for: " + file.getName());
+
+        }
         HarReader harReader = new HarReader();
         Har har = harReader.readFromFile(file);
         ArrayList<HarEntry> jsonEntries = filterEntries(har.getLog().getEntries());
+
+        //Sort array list by started DateTime
+        jsonEntries.sort(Comparator.comparing(HarEntry::getStartedDateTime));
 
         String directoryPath = RESULTS_DIRECTORY + "/" + file.getName().replaceAll(".har", "");
         createDirectory(new File(directoryPath));
 
         if (new File(directoryPath).exists()) {
             //Initial quick run to identify fields for replacement
-            for (HarEntry jsonEntry : jsonEntries) {
-                collectReplaces(jsonEntry);
-            }
+            //Temporary remove replaces from code.
+//            for (HarEntry jsonEntry : jsonEntries) {
+//                collectReplaces(jsonEntry);
+//            }
             System.out.println("Replaces will be done:" + replaces.toString());
 
             for (HarEntry jsonEntry : jsonEntries) {
                 harEntityToJson(jsonEntry, directoryPath);
+//                jsonEntry.getStartedDateTime()
             }
         }
     }
 
-    private static void createDirectory(File directory){
-        if (!directory.exists()){
-            if (directory.mkdir()){
+    private static void createDirectory(File directory) {
+        if (!directory.exists()) {
+            if (directory.mkdir()) {
                 System.out.println("Directory \"" + directory.getPath() + "\" was created.");
             }
         }
     }
 
     private static ArrayList<HarEntry> filterEntries(List<HarEntry> harEntries) {
-        ArrayList<HarEntry> entries = new ArrayList<HarEntry>();
+        ArrayList<HarEntry> entries = new ArrayList<>();
         for (HarEntry arg : harEntries) {
             if (
                     (
@@ -109,19 +156,19 @@ public class Main {
         return entries;
     }
 
-    private static void collectReplaces(HarEntry jsonEntry){
-        for (HarHeader harHeader : jsonEntry.getResponse().getHeaders()){
-            if(harHeader.getName().equalsIgnoreCase("DP_SFL_ID")){
+    private static void collectReplaces(HarEntry jsonEntry) {
+        for (HarHeader harHeader : jsonEntry.getResponse().getHeaders()) {
+            if (harHeader.getName().equalsIgnoreCase("DP_SFL_ID")) {
                 replaces.put(harHeader.getValue(), TEST_USER_ID);
             }
-            if(harHeader.getName().equalsIgnoreCase("Access_Token")){
+            if (harHeader.getName().equalsIgnoreCase("Access_Token")) {
                 replaces.put(harHeader.getValue(), TEST_ACCESS_TOKEN);
             }
-            if(harHeader.getName().equalsIgnoreCase("Refresh_Token")){
+            if (harHeader.getName().equalsIgnoreCase("Refresh_Token")) {
                 replaces.put(harHeader.getValue(), TEST_REFRESH_TOKEN);
             }
         }
-        if(jsonEntry.getResponse().getContent().getText()!=null) {
+        if (jsonEntry.getResponse().getContent().getText() != null) {
             Pattern pattern = Pattern.compile("refresh_token\\W+([-\\w\\.]+)");
             Matcher matcher = pattern.matcher(jsonEntry.getResponse().getContent().getText());
             if (matcher.find()) {
@@ -148,11 +195,22 @@ public class Main {
                 .put("path", replaceData(getRelativePath(jsonEntry.getRequest().getUrl())));
 
         if (jsonEntry.getRequest().getQueryString() != null) {
-            ObjectNode query = predicates.addObject().putObject("deepEquals")
+            ObjectNode query = predicates.addObject().putObject("equals")
                     .putObject("query");
             for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
-                query.put(harQueryParam.getName(), harQueryParam.getValue());
+                if (!harQueryParam.getName().equals("_")) {
+                    query.put(harQueryParam.getName(), harQueryParam.getValue());
+                }
             }
+        }
+
+        if (currentScenario != null){
+            ObjectNode headers = predicates.addObject().putObject("equals")
+                    .putObject("headers");
+                headers.put("testScenario", currentScenario.getScenarioName());
+                if(jsonEntry.getRequest().getUrl().contains("/draft-order")){
+                    headers.put("testStep", currentScenario.getStepIdDraftOrder());
+                }
         }
 
         if (jsonEntry.getRequest().getBodySize() != 0) {
@@ -182,6 +240,12 @@ public class Main {
         if (jsonEntry.getResponse().getContent().getText() != null) {
             is.put("body", replaceData(jsonEntry.getResponse().getContent().getText()));
         }
+        else{
+            if(jsonEntry.getRequest().getMethod() == HttpMethod.GET) {
+                System.out.println("Missing body for: " + jsonEntry.getRequest().getMethod() + " " + jsonEntry.getRequest().getUrl());
+            }
+            is.put("body", "");
+        }
 
         is.put("_mode", "text");
 
@@ -190,15 +254,15 @@ public class Main {
         printJsonToFile(RESULTS_DIRECTORY_ALL, jsonEntry, mapper, objectNode);
     }
 
-    private static String replaceData(String inputString){
+    private static String replaceData(String inputString) {
         String result = inputString;
-        for(String key : replaces.keySet()){
+        for (String key : replaces.keySet()) {
             result = result.replaceAll(key, replaces.get(key));
         }
         return replaceAccountHref(result);
     }
 
-    private static String replaceAccountHref(String inputString){
+    private static String replaceAccountHref(String inputString) {
         Pattern pattern = Pattern.compile("account_href\\W+https://([^/]+)");
         Matcher matcher = pattern.matcher(inputString);
         if (matcher.find()) {
@@ -213,7 +277,7 @@ public class Main {
         String folder = "";
         Pattern pattern = Pattern.compile("https?://([^/]+)");
         Matcher matcher = pattern.matcher(jsonEntry.getRequest().getUrl());
-        if (matcher.find()){
+        if (matcher.find()) {
             folder = "/" + matcher.group(1);
             File dir = new File(directoryPath + folder);
             createDirectory(dir);
@@ -240,7 +304,7 @@ public class Main {
         Pattern pattern = Pattern.compile("https?://(?:[^/]+)([^?]*)");
         Matcher matcher = pattern.matcher(absolutePath);
 
-        if(matcher.find()){
+        if (matcher.find()) {
             return matcher.group(1);
         }
 
