@@ -27,10 +27,8 @@ public class Main {
     private static String TEST_DOMAIN = "services.matrix.dp-dev.jcpcloud2.net";
 
     //Map of har name to real scenario name
-    private static HashMap<String, BddFileDetails> scenarios = new HashMap<String, BddFileDetails>();
+    private static HashMap<String, BddFileDetails> scenarios;
     private static BddFileDetails currentScenario;
-
-    private static HashMap<String, Integer> orderSteps = new HashMap<String, Integer>();
 
     public static void main(String[] args) throws HarReaderException, IOException {
         String HAR_DIRECTORY = "hars";
@@ -41,7 +39,6 @@ public class Main {
         File resultsAll = new File(RESULTS_DIRECTORY_ALL);
         createDirectory(resultsAll);
 
-        prepareOrderSteps();
         prepareHarDetails();
 
         File harDirectory = new File(HAR_DIRECTORY);
@@ -66,26 +63,7 @@ public class Main {
     }
 
     private static void prepareHarDetails() {
-        scenarios.put(
-                "CartandCheckout_Smoke_1_ProdAddToCart_Validate add to bag for sephora product.har",
-                new BddFileDetails(
-                        "CartandCheckout_Smoke_1_ProdAddToCart_Validate add to bag for sephora product.har",
-                        "scenarios.yoda.checkout.yk.yoda_cc_smoke_extended_yk.bdd.CartandCheckout_Smoke_1_ProdAddToCart_Validate add to bag for sephora product",
-                        new String[]{
-                                "Given customer starts JCPenney session",
-                                "When customer searches for '${Products.SEPHORA_ITEM.items1.webId}'",
-                                "And customer selects required product options",
-                                "And customer adds product to bag",
-                                "And customer wants to 'CHECKOUT' from add to bag popup",
-                                "Then customer should see personalized shopping bag",
-                                "And customer closes the current session"},
-                        orderSteps))
-        ;
-    }
-
-    private static void prepareOrderSteps(){
-        orderSteps.put("customer wants to 'CHECKOUT' from add to bag popup", 2);
-        orderSteps.put("customer click on 'apply code' link of '1' available coupon and verifies its functioning", 5);
+        scenarios = new HarDetails().getHarDetails();
     }
 
     private static void processFile(File file) throws HarReaderException, IOException {
@@ -195,12 +173,27 @@ public class Main {
                 .put("path", replaceData(getRelativePath(jsonEntry.getRequest().getUrl())));
 
         if (jsonEntry.getRequest().getQueryString() != null) {
-            ObjectNode query = predicates.addObject().putObject("equals")
-                    .putObject("query");
-            for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
-                if (!harQueryParam.getName().equals("_")) {
-                    query.put(harQueryParam.getName(), harQueryParam.getValue());
+
+            if (!jsonEntry.getRequest().getUrl().contains("product-offerings")
+                    && jsonEntry.getRequest().getQueryString().size() != 0) {
+                ObjectNode query = predicates.addObject().putObject("equals").putObject("query");
+                if (jsonEntry.getRequest().getUrl().contains("predictivesearch")) {
+                    for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
+                        if (harQueryParam.getName().equals("q")) {
+                            query.put(harQueryParam.getName(), harQueryParam.getValue());
+                        }
+                    }
                 }
+                else {
+                    for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
+                        query.put(harQueryParam.getName(), harQueryParam.getValue());
+                    }
+                }
+            }
+            //dreaft order need deep equals to empty for valid match
+            if (jsonEntry.getRequest().getQueryString().size() == 0
+                    && jsonEntry.getRequest().getUrl().contains("draft-order")) {
+                predicates.addObject().putObject("deepEquals").putObject("query");
             }
         }
 
@@ -209,7 +202,13 @@ public class Main {
             and.addObject().putObject("contains").putObject("headers").put("cookie","testScenario=" + currentScenario.getScenarioName());
 
             if (jsonEntry.getRequest().getUrl().contains("/draft-order")) {
-                and.addObject().putObject("contains").putObject("headers").put("cookie", "testStep="+ currentScenario.getStepIdDraftOrder());
+                Integer stepId = currentScenario.getStepIdDraftOrder();
+                if (null!=stepId) {
+                    and.addObject().putObject("contains").putObject("headers").put("cookie", "testStep=" + stepId);
+                }
+                else{
+                    System.out.println("IMPORTANT: Invalid amount of requests for draft order. Check initial data for amount");
+                }
             }
         }
 
@@ -222,6 +221,16 @@ public class Main {
                 .put("method",
                         jsonEntry.getRequest().getMethod().name());
 
+        //======================= Headers update block ================
+        if (jsonEntry.getRequest().getUrl().contains("v5/accounts")){
+            for (HarHeader harHeader : jsonEntry.getRequest().getHeaders()){
+                if (harHeader.getName().matches("x-guest-user")){
+                    predicates.addObject().putObject("contains").putObject("headers")
+                            .put("x-guest-user", "true");
+                }
+            }
+        }
+
         is.put("statusCode", jsonEntry.getResponse().getStatus());
         ObjectNode headers = is.putObject("headers");
         ArrayNode setCookie = headers.putArray("Set-Cookie");
@@ -232,7 +241,13 @@ public class Main {
         }
         for (HarHeader harHeader : jsonEntry.getResponse().getHeaders()) {
             if (!harHeader.getName().equals("Set-Cookie")) {
-                headers.put(harHeader.getName(), replaceData(harHeader.getValue()));
+                if (jsonEntry.getRequest().getUrl().contains("v5/accounts")
+                        && harHeader.getName().toLowerCase().contains("location")) {
+                    headers.put(harHeader.getName(), replaceDomain(replaceData(harHeader.getValue())));
+                }
+                else {
+                    headers.put(harHeader.getName(), replaceData(harHeader.getValue()));
+                }
             }
         }
         headers.put("X-PROXY", "Service Virtualization");
@@ -264,6 +279,15 @@ public class Main {
 
     private static String replaceAccountHref(String inputString) {
         Pattern pattern = Pattern.compile("account_href\\W+https://([^/]+)");
+        Matcher matcher = pattern.matcher(inputString);
+        if (matcher.find()) {
+            return inputString.replaceAll(matcher.group(1), TEST_DOMAIN);
+        }
+        return inputString;
+    }
+
+    private static String replaceDomain(String inputString) {
+        Pattern pattern = Pattern.compile("https://([^/]+)");
         Matcher matcher = pattern.matcher(inputString);
         if (matcher.find()) {
             return inputString.replaceAll(matcher.group(1), TEST_DOMAIN);
