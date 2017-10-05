@@ -8,10 +8,7 @@ import de.sstoehr.harreader.model.*;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -75,6 +72,7 @@ public class Main {
         if (scenarios.containsKey(file.getName())){
             currentScenario = scenarios.get(file.getName());
             System.out.println("Found scenario details for: " + file.getName());
+            System.out.println("Expected steps for stepId: " + currentScenario.getStepsDraftOrder());
         }
         else{
             currentScenario = null;
@@ -184,6 +182,14 @@ public class Main {
                         }
                     }
                 }
+                else if (jsonEntry.getRequest().getUrl().contains("draft-order")) {
+                    for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
+                        //remove storeId from draft order requests because it different for different runs
+                        if (!harQueryParam.getName().equals("storeId")) {
+                            query.put(harQueryParam.getName(), harQueryParam.getValue());
+                        }
+                    }
+                }
                 else {
                     for (HarQueryParam harQueryParam : jsonEntry.getRequest().getQueryString()) {
                         query.put(harQueryParam.getName(), harQueryParam.getValue());
@@ -201,7 +207,8 @@ public class Main {
             ArrayNode and = predicates.addObject().putArray("and");
             and.addObject().putObject("contains").putObject("headers").put("cookie","testScenario=" + currentScenario.getScenarioName());
 
-            if (jsonEntry.getRequest().getUrl().contains("/draft-order")) {
+            if (jsonEntry.getRequest().getUrl().matches("(.*draft-order$)|(.*draft-order\\?.*)")
+                    && jsonEntry.getRequest().getMethod() == HttpMethod.GET) {
                 Integer stepId = currentScenario.getStepIdDraftOrder();
                 if (null!=stepId) {
                     and.addObject().putObject("contains").putObject("headers").put("cookie", "testStep=" + stepId);

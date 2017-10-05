@@ -1,3 +1,4 @@
+import java.io.Console;
 import java.util.*;
 
 public class BddFileDetails {
@@ -17,7 +18,7 @@ public class BddFileDetails {
         for (String step : steps) {
 
             for (String key : orderSteps.keySet()) {
-                if (step.contains(key)) {
+                if (step.matches(key)) {
                     for (int j = 0; j < orderSteps.get(key); j++) {
                         stepsDraftOrder.offer(stepId);
                     }
@@ -53,5 +54,9 @@ public class BddFileDetails {
 
     Integer getStepIdDraftOrder(){
         return stepsDraftOrder.poll();
+    }
+
+    public Queue<Integer> getStepsDraftOrder() {
+        return stepsDraftOrder;
     }
 }
