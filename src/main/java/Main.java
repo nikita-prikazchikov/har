@@ -115,17 +115,25 @@ public class Main {
     private static ArrayList<HarEntry> filterEntries(List<HarEntry> harEntries) {
         ArrayList<HarEntry> entries = new ArrayList<>();
         for (HarEntry arg : harEntries) {
-            if (
-                    (
-                            (
-                                    arg.getResponse().getContent().getMimeType().equals("application/json")
-                                            || arg.getResponse().getContent().getMimeType().equals("text/json")
-                                            || arg.getRequest().getMethod() == HttpMethod.POST
-                            )
-                                    && arg.getRequest().getUrl().matches("^https?://[^/]+jcpenney.*")
-                    )
-                            || arg.getRequest().getUrl().matches("^https?://[^/]+api\\.jcpenney.*")) {
-                entries.add(arg);
+            try {
+                if (
+                        (
+                                (
+                                        arg.getResponse().getContent().getMimeType().equals("application/json")
+                                                || arg.getResponse().getContent().getMimeType().equals("text/json")
+                                                || arg.getRequest().getMethod() == HttpMethod.POST
+                                )
+                                        && arg.getRequest().getUrl().matches("^https?://[^/]+jcpenney.*")
+                        )
+                                || (
+                                arg.getRequest().getUrl().matches("^https?://[^/]+api\\.jcpenney.*")
+                                        && arg.getRequest().getMethod() != HttpMethod.OPTIONS)) {
+                    entries.add(arg);
+                }
+            }
+            catch (Exception e){
+                System.out.println(e.getStackTrace());
+                System.out.println("har details: " + arg.getRequest().getUrl());
             }
         }
         System.out.println(String.format("There are %d request filtered from %d", entries.size(), harEntries.size()));
@@ -167,8 +175,18 @@ public class Main {
         ArrayNode predicates = objectNode.putArray("predicates");
         ArrayNode responses = objectNode.putArray("responses");
         ObjectNode is = responses.addObject().putObject("is");
-        predicates.addObject().putObject("deepEquals")
-                .put("path", replaceData(getRelativePath(jsonEntry.getRequest().getUrl())));
+
+
+        if (jsonEntry.getRequest().getUrl().contains("draft-order")) {
+            predicates.addObject().putObject("matches")
+                    .put("path",
+                            replaceData(getRelativePath(jsonEntry.getRequest().getUrl()))
+                    .replaceFirst("(/order-api/v1/accounts/)[^/]+(/draft-order.*)", "$1[^/]+$2"));
+        }
+        else {
+            predicates.addObject().putObject("deepEquals")
+                    .put("path", replaceData(getRelativePath(jsonEntry.getRequest().getUrl())));
+        }
 
         if (jsonEntry.getRequest().getQueryString() != null) {
 
@@ -204,14 +222,15 @@ public class Main {
         }
 
         if (currentScenario != null) {
-            ArrayNode and = predicates.addObject().putArray("and");
-            and.addObject().putObject("contains").putObject("headers").put("cookie","testScenario=" + currentScenario.getScenarioName());
+//            ArrayNode and = predicates.addObject().putArray("and");
+//            and.addObject().putObject("contains").putObject("headers").put("cookie","testScenario=" + currentScenario.getScenarioName());
+            predicates.addObject().putObject("contains").putObject("headers").put("cookie", currentScenario.getScenarioName());
 
             if (jsonEntry.getRequest().getUrl().matches("(.*draft-order$)|(.*draft-order\\?.*)")
                     && jsonEntry.getRequest().getMethod() == HttpMethod.GET) {
                 Integer stepId = currentScenario.getStepIdDraftOrder();
                 if (null!=stepId) {
-                    and.addObject().putObject("contains").putObject("headers").put("cookie", "testStep=" + stepId);
+                    predicates.addObject().putObject("contains").putObject("headers").put("cookie", "testStep=" + stepId);
                 }
                 else{
                     System.out.println("IMPORTANT: Invalid amount of requests for draft order. Check initial data for amount");
@@ -243,7 +262,9 @@ public class Main {
         ArrayNode setCookie = headers.putArray("Set-Cookie");
         for (HarHeader harHeader : jsonEntry.getResponse().getHeaders()) {
             if (harHeader.getName().equals("Set-Cookie")) {
-                setCookie.add(replaceData(harHeader.getValue()));
+                for(String val : harHeader.getValue().split("\\r?\\n")) {
+                    setCookie.add(replaceData(val));
+                }
             }
         }
         for (HarHeader harHeader : jsonEntry.getResponse().getHeaders()) {
