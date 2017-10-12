@@ -492,6 +492,39 @@ class HarDetails {
                         },
                         orderSteps));
 
+        scenarioName = "CartandCheckout_Smoke_19_Guest User + Regular Item + STS + GC + CC";
+        scenarios.put(
+                scenarioName + ".har",
+                new BddFileDetails(
+                        scenarioName + ".har",
+                        prefix + scenarioName,
+                        new String[]{
+                                "Given fetch working 'JCPGiftCards.cards.card' giftcard '1' quantity",
+                                "Given customer starts JCPenney session",
+                                "When customer searches for '${Products.REGULAR.items1.webId}'",
+                                "Then customer selects required product options",
+                                "Then customer adds product to bag",
+                                "Then verify items in checkout popup",
+                                "Then customer selects 'checkout' from added to shopping bag popup",
+                                "Then customer should see personalized shopping bag",
+                                "Then customer click on checkout button in shopping bag page",
+                                "Then customer opts to checkout as 'guest'",
+                                "Then customer search pick up store from shipping page with zipcode '${Customers.HomeOfficeUser.zip}'",
+                                "Then customer selects store '1' from pick up store list",
+                                "Then customer enters 'Customers.HomeOfficeUser' in shipping pickup form",
+                                "And customer continues to payment section of the checkout page from store section",
+                                "And customer 'create' payment with JCPenney payment method using detail 'testexecution.JCPGiftCards.cards.card1'",
+                                "And verifies remaining balance in giftcard",
+                                "And customer 'create' payment with credit card payment method using detail 'CreditCards.jcpmastercard' as 'guest' user",
+                                "Then customer provides 'Customers.HomeOfficeUser' as billing address for 'create' block as 'guest' user",
+                                "Then customer continues to review section of the checkout page",
+                                "Then customer should be able to review the order",
+                                "Then customer submit the order",
+                                "Then customer should able to verify order confirmation page",
+                                "Then customer closes the current session"
+                        },
+                        orderSteps));
+
         scenarioName = "CartandCheckout_Smoke_22_Guest User + Regular Item + Express PayPal";
         scenarios.put(
                 scenarioName + ".har",

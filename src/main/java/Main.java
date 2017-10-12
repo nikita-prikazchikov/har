@@ -3,6 +3,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import de.sstoehr.harreader.HarReader;
 import de.sstoehr.harreader.HarReaderException;
+import de.sstoehr.harreader.HarReaderMode;
 import de.sstoehr.harreader.model.*;
 
 import java.io.File;
@@ -80,7 +81,7 @@ public class Main {
 
         }
         HarReader harReader = new HarReader();
-        Har har = harReader.readFromFile(file);
+        Har har = harReader.readFromFile(file, HarReaderMode.LAX);
         ArrayList<HarEntry> jsonEntries = filterEntries(har.getLog().getEntries());
 
         //Sort array list by started DateTime
@@ -269,6 +270,9 @@ public class Main {
         }
         for (HarHeader harHeader : jsonEntry.getResponse().getHeaders()) {
             if (!harHeader.getName().equals("Set-Cookie")) {
+                if (harHeader.getName().toLowerCase().contains("content-encoding")){
+                    continue;
+                }
                 if (jsonEntry.getRequest().getUrl().contains("v5/accounts")
                         && harHeader.getName().toLowerCase().contains("location")) {
                     headers.put(harHeader.getName(), replaceDomain(replaceData(harHeader.getValue())));
